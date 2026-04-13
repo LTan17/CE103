@@ -142,14 +142,14 @@ void button_task(void *arg){
         if(e1 == BTN_DOUBLE || e2 == BTN_DOUBLE){
             setpoint = 0;
         }
-        if(btn1.state == BTN_HOLD){
-            if(now - last_hold_1 > pdMS_TO_TICKS(200)){
+        if(btn1.state == HOLD){
+            if(now - last_hold_1 > pdMS_TO_TICKS(100)){
                 setpoint += 5;
                 last_hold_1 = now;
             }
         }
-        if(btn2.state == BTN_HOLD){
-            if(now - last_hold_2 > pdMS_TO_TICKS(200)){
+        if(btn2.state == HOLD){
+            if(now - last_hold_2 > pdMS_TO_TICKS(100)){
                 setpoint -= 5;
                 last_hold_2 = now;
             }
