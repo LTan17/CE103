@@ -1,2 +1,10 @@
-idf_component_register(SRCS "main.c"
-                    INCLUDE_DIRS ".")
+idf_component_register(
+    SRCS 
+        "main.c"
+        "task/task.c"
+        "drivers/button.c"
+    INCLUDE_DIRS 
+        "."
+        "drivers"
+        "task"
+)
