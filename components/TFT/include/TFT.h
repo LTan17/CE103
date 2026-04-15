@@ -7,6 +7,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "myuit.h"
+
 #define TFT_SCREEN_WIDTH 320
 #define TFT_SCREEN_HEIGHT 240
 
@@ -67,10 +69,12 @@ void TFT_Init(void);
 void TFT_DrawPixel(uint16_t x, uint16_t y, uint16_t color);
 void TFT_FillRectangle(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
 void TFT_FillScreen(uint16_t color);
-//void TFT_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *data);
+// void TFT_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *data);
 void TFT_InvertColors(bool invert);
-//void TFT_WriteString_BgImage(uint16_t x, uint16_t y, const char *str, FontDef font, uint16_t color, const uint16_t *bg_image);
-//void TFT_DrawImage_FixColor(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t *data);
+// void TFT_WriteString_BgImage(uint16_t x, uint16_t y, const char *str, FontDef font, uint16_t color, const uint16_t *bg_image);
+// void TFT_DrawImage_FixColor(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t *data);
 void TFT_DrawImage_Standard(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t *data);
 void TFT_WriteString_Transparent(uint16_t x, uint16_t y, const char *str, FontDef font, uint16_t color, const uint16_t *bg_image);
+void update_display(float current_speed, float target_speed, float kP, float kI, float kD);
+
 #endif

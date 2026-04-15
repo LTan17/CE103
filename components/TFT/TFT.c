@@ -285,27 +285,32 @@ void TFT_DrawImage_Standard(uint16_t x, uint16_t y, uint16_t w, uint16_t h, cons
     TFT_Select();
     TFT_SetAddressWindow(x, y, x + w - 1, y + h - 1);
     gpio_set_level(TFT_DC, 1);
-    
+
     // Gửi trực tiếp vào SPI
     TFT_WriteData((uint8_t *)data, sizeof(uint16_t) * w * h);
-    
+
     TFT_Unselect();
 }
 
-// Hàm in chữ xuyên thấu 
+// Hàm in chữ xuyên thấu
 static void TFT_WriteChar_Transparent(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, const uint16_t *bg_image)
 {
     uint32_t i, b, j;
     TFT_SetAddressWindow(x, y, x + font.width - 1, y + font.height - 1);
 
-    for (i = 0; i < font.height; i++) {
+    for (i = 0; i < font.height; i++)
+    {
         b = font.data[(ch - 32) * font.height + i];
-        for (j = 0; j < font.width; j++) {
-            if ((b << j) & 0x8000) {
+        for (j = 0; j < font.width; j++)
+        {
+            if ((b << j) & 0x8000)
+            {
                 // In màu nét chữ
                 uint8_t data[] = {color >> 8, color & 0xFF};
                 TFT_WriteData(data, 2);
-            } else {
+            }
+            else
+            {
                 // Lấy màu nền khớp với ảnh đã Swap Endian
                 uint16_t bg_color = bg_image[(y + i) * TFT_WIDTH + (x + j)];
                 uint8_t data[] = {bg_color & 0xFF, bg_color >> 8};
@@ -325,4 +330,23 @@ void TFT_WriteString_Transparent(uint16_t x, uint16_t y, const char *str, FontDe
         str++;
     }
     TFT_Unselect();
+}
+
+void update_display(float current_speed, float target_speed, float kP, float kI, float kD)
+{
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Toc do hien tai: %.1f  ", current_speed);
+    TFT_WriteString_Transparent(10, 40, buf, Font_11x18, TFT_BLACK, myuit);
+
+    snprintf(buf, sizeof(buf), "Toc do yeu cau: %.1f  ", target_speed);
+    TFT_WriteString_Transparent(10, 70, buf, Font_11x18, TFT_RED, myuit);
+
+    snprintf(buf, sizeof(buf), "kP: %.2f  ", kP);
+    TFT_WriteString_Transparent(10, 110, buf, Font_11x18, TFT_BLUE, myuit);
+
+    snprintf(buf, sizeof(buf), "kI: %.2f  ", kI);
+    TFT_WriteString_Transparent(10, 140, buf, Font_11x18, TFT_BLUE, myuit);
+
+    snprintf(buf, sizeof(buf), "kD: %.2f  ", kD);
+    TFT_WriteString_Transparent(10, 170, buf, Font_11x18, TFT_BLUE, myuit);
 }
