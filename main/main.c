@@ -23,15 +23,15 @@ void app_main(){
 
     btn_semaphore = xSemaphoreCreateBinary();
 
-    gpio_set_direction(4, GPIO_MODE_INPUT);
-    gpio_set_direction(5, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(4, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(5, GPIO_PULLUP_ONLY);
+    gpio_set_direction(26, GPIO_MODE_INPUT);
+    gpio_set_direction(27, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(26, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(27, GPIO_PULLUP_ONLY);
 
-    gpio_set_intr_type(4, GPIO_INTR_ANYEDGE);
-    gpio_set_intr_type(5, GPIO_INTR_ANYEDGE);
+    gpio_set_intr_type(26, GPIO_INTR_ANYEDGE);
+    gpio_set_intr_type(27, GPIO_INTR_ANYEDGE);
     gpio_install_isr_service(0);
-    gpio_isr_handler_add(4, isr_handler, NULL);
-    gpio_isr_handler_add(5, isr_handler, NULL);
+    gpio_isr_handler_add(26, isr_handler, NULL);
+    gpio_isr_handler_add(27, isr_handler, NULL);
     xTaskCreate(button_task, "button_task", 4096, NULL, 10, NULL);
 }
