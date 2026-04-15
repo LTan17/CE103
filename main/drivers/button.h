@@ -1,10 +1,9 @@
 #pragma once
 #include <stdint.h>
 
-#define LED1 2
-#define LED2 15
-#define BTN1 4
-#define BTN2 5
+
+#define BTN1 26
+#define BTN2 27
 
 #define DEBOUNCE_MS 20
 #define DOUBLE_MS   300
