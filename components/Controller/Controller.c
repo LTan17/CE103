@@ -16,7 +16,7 @@ typedef struct
     float I_output_limit;
 } pid_t;
 
-pid_t pid = {.Kp = 7.9, .Ki = 65.8, .Kd = 0.2, .prev_error = 0, .I = 0, .I_output_limit = 300.0};
+pid_t pid = {.Kp = 5.0, .Ki = 17.8, .Kd = 0.3, .prev_error = 0, .I = 0, .I_output_limit = 300.0};
 
 float display_current_speed, display_target_speed = 0.0;
 
@@ -88,7 +88,7 @@ static int16_t Controller_PID(float target_speed, float dt)
     display_target_speed = target_speed;
 
     int16_t control_signal = pid_calculate(&pid, (float)target_speed, current_speed, dt);
-    // printf(">speed:%.2f\n", current_speed);
+    printf(">speed:%.2f\n", current_speed);
 
     // printf("Target speed: %.2f, Current speed: %.2f, Control signal: %d ", target_speed, current_speed, control_signal);
     return control_signal;
@@ -100,7 +100,7 @@ void Controller_Update(float target_speed, float dt)
     int16_t duty = Controller_PID(target_speed, dt);
     duty = base_duty + duty;
     duty = duty > MOTOR_MAX_DUTY ? MOTOR_MAX_DUTY : duty;
-    // printf("duty: %d\n", duty);
+    printf(">duty: %d\n", duty);
     motor_set_duty(duty);
 }
 
