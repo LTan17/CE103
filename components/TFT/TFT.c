@@ -35,7 +35,8 @@ static void TFT_WriteData(uint8_t *buff, size_t buff_size)
 
     while (bytes_remaining > 0)
     {
-        size_t chunk_size = (bytes_remaining > MAX_SPI_CHUNK_SIZE) ? MAX_SPI_CHUNK_SIZE : bytes_remaining;
+        // Giới hạn chunk_size xuống 1024 để an toàn cho bộ nhớ Flash & DMA của ESP32
+        size_t chunk_size = (bytes_remaining > 1024) ? 1024 : bytes_remaining;
         TFT_SPI_transmit(current_buff, chunk_size);
 
         bytes_remaining -= chunk_size;
@@ -285,6 +286,7 @@ void TFT_DrawImage_Standard(uint16_t x, uint16_t y, uint16_t w, uint16_t h, cons
     TFT_Select();
     TFT_SetAddressWindow(x, y, x + w - 1, y + h - 1);
     gpio_set_level(TFT_DC, 1);
+<<<<<<< Updated upstream
     
     // Gửi trực tiếp vào SPI
     TFT_WriteData((uint8_t *)data, sizeof(uint16_t) * w * h);
@@ -293,11 +295,35 @@ void TFT_DrawImage_Standard(uint16_t x, uint16_t y, uint16_t w, uint16_t h, cons
 }
 
 // Hàm in chữ xuyên thấu 
+=======
+
+    size_t num_pixels = w * h;
+    size_t pixels_sent = 0;
+    const size_t CHUNK_PIXELS = 512; 
+    uint8_t buffer[CHUNK_PIXELS * 2];
+
+    while (pixels_sent < num_pixels) {
+        size_t pixels_to_send = (num_pixels - pixels_sent > CHUNK_PIXELS) ? CHUNK_PIXELS : (num_pixels - pixels_sent);
+        for (size_t i = 0; i < pixels_to_send; i++) {
+            uint16_t color = data[pixels_sent + i];
+            buffer[i*2] = color >> 8;
+            buffer[i*2 + 1] = color & 0xFF;
+        }
+        TFT_SPI_transmit(buffer, pixels_to_send * 2);
+        pixels_sent += pixels_to_send;
+    }
+
+    TFT_Unselect();
+}
+
+>>>>>>> Stashed changes
 static void TFT_WriteChar_Transparent(uint16_t x, uint16_t y, char ch, FontDef font, uint16_t color, const uint16_t *bg_image)
 {
     uint32_t i, b, j;
-    TFT_SetAddressWindow(x, y, x + font.width - 1, y + font.height - 1);
+    uint16_t w = font.width;
+    uint16_t h = font.height;
 
+<<<<<<< Updated upstream
     for (i = 0; i < font.height; i++) {
         b = font.data[(ch - 32) * font.height + i];
         for (j = 0; j < font.width; j++) {
@@ -307,12 +333,40 @@ static void TFT_WriteChar_Transparent(uint16_t x, uint16_t y, char ch, FontDef f
                 TFT_WriteData(data, 2);
             } else {
                 // Lấy màu nền khớp với ảnh đã Swap Endian
+=======
+    // Tránh lỗi tràn tọa độ
+    if ((x + w > TFT_WIDTH) || (y + h > TFT_HEIGHT)) return;
+
+    uint8_t *buffer = (uint8_t *)malloc(w * h * 2);
+    if (buffer == NULL) return;
+
+    uint32_t buf_idx = 0;
+
+    for (i = 0; i < h; i++)
+    {
+        b = font.data[(ch - 32) * h + i];
+        for (j = 0; j < w; j++)
+        {
+            if ((b << j) & 0x8000)
+            {
+                // Màu nét chữ
+                buffer[buf_idx++] = color >> 8;
+                buffer[buf_idx++] = color & 0xFF;
+            }
+            else
+            {
+>>>>>>> Stashed changes
                 uint16_t bg_color = bg_image[(y + i) * TFT_WIDTH + (x + j)];
-                uint8_t data[] = {bg_color & 0xFF, bg_color >> 8};
-                TFT_WriteData(data, 2);
+                buffer[buf_idx++] = bg_color >> 8;
+                buffer[buf_idx++] = bg_color & 0xFF;
             }
         }
     }
+
+    TFT_SetAddressWindow(x, y, x + w - 1, y + h - 1);
+    gpio_set_level(TFT_DC, 1);
+    TFT_WriteData(buffer, buf_idx);
+    free(buffer);
 }
 
 void TFT_WriteString_Transparent(uint16_t x, uint16_t y, const char *str, FontDef font, uint16_t color, const uint16_t *bg_image)
@@ -325,4 +379,35 @@ void TFT_WriteString_Transparent(uint16_t x, uint16_t y, const char *str, FontDe
         str++;
     }
     TFT_Unselect();
+<<<<<<< Updated upstream
+=======
+}
+
+void update_display(float current_speed, float target_speed, float kP, float kI, float kD)
+{
+    static uint8_t is_first_run = 1;
+    
+    if (is_first_run == 1) {
+        TFT_DrawImage_Standard(0, 0, TFT_WIDTH, TFT_HEIGHT, myuit);
+        is_first_run = 0; 
+    }
+    char buf[64];
+
+    TFT_WriteString_Transparent(55, 20, "He Thong Dieu Khien", Font_11x18, TFT_GREEN, myuit);
+
+    snprintf(buf, sizeof(buf), "Current Speed: %.1f  ", current_speed);
+    TFT_WriteString_Transparent(10, 55, buf, Font_11x18, TFT_BLACK, myuit);
+
+    snprintf(buf, sizeof(buf), "Target Speed: %.1f  ", target_speed);
+    TFT_WriteString_Transparent(10, 80, buf, Font_11x18, TFT_RED, myuit);
+
+    snprintf(buf, sizeof(buf), "kP: %.2f  ", kP);
+    TFT_WriteString_Transparent(10, 120, buf, Font_11x18, TFT_BLUE, myuit);
+
+    snprintf(buf, sizeof(buf), "kI: %.2f  ", kI);
+    TFT_WriteString_Transparent(10, 150, buf, Font_11x18, TFT_BLUE, myuit);
+
+    snprintf(buf, sizeof(buf), "kD: %.2f  ", kD);
+    TFT_WriteString_Transparent(10, 180, buf, Font_11x18, TFT_BLUE, myuit);
+>>>>>>> Stashed changes
 }

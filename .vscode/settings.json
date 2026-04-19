@@ -6,7 +6,11 @@
     "board/esp32-wrover-kit-3.3v.cfg"
   ],
   "idf.portWin": "COM3",
+<<<<<<< Updated upstream
   "idf.toolsPathWin": "c:\\Espressif\\tools",
+=======
+  "idf.currentSetup": "E:\\Espressif IDEEE\\.espressif\\v6.0\\esp-idf",
+>>>>>>> Stashed changes
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
   },
