@@ -11,7 +11,6 @@ void button_init(Button *btn, int pin)
     btn->release_time = 0;
     btn->state = IDLE;
 }
-
 BtnEvent process_button(Button *btn, int raw, uint32_t now)
 {
     // debounce
@@ -27,54 +26,36 @@ BtnEvent process_button(Button *btn, int raw, uint32_t now)
             btn->stable = raw;
 
             // kiểm tra giống code polling
-            if (btn->stable == 0)
+            if (btn->stable == 0)   // nút được nhấn
             {
-                btn->press_time = now;
-
-                if (btn->state == WAIT_DOUBLE)
-                {
-                    btn->state = IDLE;
-                    return BTN_DOUBLE;
-                }
-                btn->state = PRESSED;
+                btn->press_time = now;      // lưu thời điểm nhấn
+                btn->state = PRESSED;       // gán state là được nhấn
             }
-
-            else
+            else                            // khi thả ra
             {
-                if (btn->state == HOLD)
+                if (btn->state == HOLD)     // kiểm tra đang trong state HOLD không? lỡ trường hợp nhấn chưa đủ lâu ở để vào HOLD
                 {
-                    btn->state = IDLE;
-                    return BTN_NONE;
+                    btn->state = IDLE;      // thả ra thì đưa trạng thái về IDLE
+                    return BTN_NONE;        // trả về giá trị là đang không nhấn
                 }
 
-                if (btn->state == PRESSED)
+                if (btn->state == PRESSED)  // nếu thả ra mà ở trạng thái nhấn   
                 {
-                    btn->release_time = now;
-                    btn->state = WAIT_DOUBLE;
+                    btn->release_time = now;// gán thời gian
+                    btn->state = IDLE;
+                    return BTN_SINGLE;      // nếu không lớn hơn thì trả về SINGLE
                 }
             }
         }
     }
-
-    // ===== HOLD =====
+    // kiểm tra nhấn
     if (btn->state == PRESSED)
     {
-        if ((now - btn->press_time) > pdMS_TO_TICKS(HOLD_MS))
+        if ((now - btn->press_time) > pdMS_TO_TICKS(HOLD_MS))   // nếu biến now (biến đém thời gian nhấn nút) > HOLD_MS 
         {
-            btn->state = HOLD;
+            btn->state = HOLD;          // trả về trạng thái là HOLD
             return BTN_HOLD;
         }
     }
-
-    // ===== SINGLE =====
-    if (btn->state == WAIT_DOUBLE)
-    {
-        if ((now - btn->release_time) > pdMS_TO_TICKS(DOUBLE_MS))
-        {
-            btn->state = IDLE;
-            return BTN_SINGLE;
-        }
-    }
-
     return BTN_NONE;
 }

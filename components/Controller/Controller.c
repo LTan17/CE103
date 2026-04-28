@@ -6,16 +6,6 @@
 
 #define MOTOR_MAX_RPM 333
 
-typedef struct
-{
-    float Kp;
-    float Ki;
-    float Kd;
-    float prev_error;
-    float I;
-    float I_output_limit;
-} pid_t;
-
 pid_t pid = {.Kp = 5.0, .Ki = 17.8, .Kd = 0.3, .prev_error = 0, .I = 0, .I_output_limit = 300.0};
 
 float display_current_speed, display_target_speed = 0.0;
@@ -197,6 +187,6 @@ void Controller_GetParams(float *current_speed, float *target_speed, float *kP, 
     *current_speed = display_current_speed;
     *target_speed = display_target_speed;
     *kP = pid.Kp;
-    *kI = pid.Ki;
+    *kI = pid.Ki;   
     *kD = pid.Kd;
 }

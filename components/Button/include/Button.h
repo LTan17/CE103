@@ -3,16 +3,15 @@
 
 #define BTN1 26
 #define BTN2 27
+#define BTN3 28
 
-#define DEBOUNCE_MS 20
-#define DOUBLE_MS 300
+#define DEBOUNCE_MS 200
 #define HOLD_MS 800
 
 typedef enum
 {
     BTN_NONE = 0,
     BTN_SINGLE,
-    BTN_DOUBLE,
     BTN_HOLD
 } BtnEvent;
 
@@ -20,9 +19,17 @@ typedef enum
 {
     IDLE,
     PRESSED,
-    WAIT_DOUBLE,
     HOLD
 } ButtonState;
+
+typedef enum
+{
+    SPEED,
+    KP,
+    KI,
+    KD,
+    MODE_COUNT
+} Control_mode;
 
 typedef struct
 {
