@@ -1,10 +1,13 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
+#include "esp_log.h"
 #include "Controller.h"
 #include "Encoder.h"
 #include "Motor.h"
 
 #define MOTOR_MAX_RPM 333
+
+static const char *TAG = "Controller";
 
 typedef struct
 {
@@ -16,18 +19,13 @@ typedef struct
     float I_output_limit;
 } pid_t;
 
-pid_t pid = {.Kp = 5.0, .Ki = 17.8, .Kd = 0.3, .prev_error = 0, .I = 0, .I_output_limit = 300.0};
+pid_t pid = {.Kp = 0.0f, .Ki = 0.0f, .Kd = 0.0f, .prev_error = 0, .I = 0, .I_output_limit = 300.0};
 
 float display_current_speed, display_target_speed = 0.0;
 
 #define RELAY_STEP 150
-#define HYSTERESIS 10
-
-int tune_state = -1;
-float tune_max = 0.0f, tune_min = 99999.0f;
-int64_t t1 = 0, t2 = 0;
-int crossing_count = 0;
-bool relay_state = true;
+#define HYSTERESIS 1
+#define MAX_SAMPLES 50
 
 static int32_t pid_calculate(pid_t *pid, float setpoint, float measured_value, float dt)
 {
@@ -46,9 +44,9 @@ static int32_t pid_calculate(pid_t *pid, float setpoint, float measured_value, f
     D_out_filter = alpha * derivative + (1 - alpha) * D_out_filter;
 
     float output = P_output + I_output + D_out_filter;
-    // printf(">P: %.2f\n", P_output);
-    // printf(">I: %.2f\n", I_output);
-    // printf(">D: %.2f\n", D_out_filter);
+    printf(">P: %.2f\n", P_output);
+    printf(">I: %.2f\n", I_output);
+    printf(">D: %.2f\n", D_out_filter);
     pid->prev_error = error;
     return (int32_t)output;
 }
@@ -100,102 +98,129 @@ void Controller_Update(float target_speed, float dt)
     int16_t duty = Controller_PID(target_speed, dt);
     duty = base_duty + duty;
     duty = duty > MOTOR_MAX_DUTY ? MOTOR_MAX_DUTY : duty;
+    duty = duty < 0 ? 0 : duty;
+    duty = duty * abs(target_speed) / target_speed;
     printf(">duty: %d\n", duty);
     motor_set_duty(duty);
 }
 
-int16_t Controller_AutoTune(float target_speed, int64_t time, float dt)
+int16_t Controller_AutoTune(int tune_pwm, float dt)
 {
-    static int tune_pwm = 800;
+    static int tune_state = 0;
+    static int sample_count = 0;
+    static bool relay_state = true;
+    static float data[MAX_SAMPLES];
+    static float time_period = 0, peak = 0, bottom = 0;
+    static int start_up = 0;
+    static float target_speed = 0.0f;
     float current = Controller_Cal_RPM(dt);
-    // if (tune_state == -1)
-    // {
-    //     if (current < target_speed)
-    //     {
-    //         tune_pwm += 10;
-    //         printf(">Initial PWM: %d\n>current: %.2f\n", tune_pwm, current);
-    //         motor_set_duty(tune_pwm);
-    //         vTaskDelay(pdMS_TO_TICKS(100));
-    //         return tune_state;
-    //     }
-    //     else
-    //     {
-    //         tune_state = 0;
-    //         return tune_state;
-    //     }
-    // }
-    tune_state = 0;
+
+    if (start_up++ < 100)
+    {
+        target_speed = current;
+        motor_set_duty(tune_pwm);
+        printf("target: %.2f\n", target_speed);
+        return 0;
+    }
     if (tune_state == 0)
     {
-        if (crossing_count > 0)
-        {
-            if (current > tune_max)
-                tune_max = current;
-            if (current < tune_min)
-                tune_min = current;
-            printf(">current: %.2f\n", current);
-        }
+        if (sample_count < MAX_SAMPLES)
+            data[sample_count++] = current;
+        else
+            tune_state = 1;
 
         if (relay_state && current > (target_speed + HYSTERESIS))
-        {
             relay_state = false;
-
-            // if (crossing_count == 0)
-            // {
-            //     t1 = time;
-            //     tune_max = current;
-            //     tune_min = current;
-            //     printf("First crossing at t=%.2fs, current: %.2f\n", t1 / 1000000.0, current);
-            // }
-            // else if (crossing_count == 2)
-            // {
-            //     t2 = time;
-            //     printf("Third crossing at t=%.2fs, current: %.2f\n", t2 / 1000000.0, current);
-            // }
-            crossing_count++;
-        }
         else if (!relay_state && current < (target_speed - HYSTERESIS))
-        {
             relay_state = true;
-            // crossing_count++;
-            // printf("Second crossing at t=%.2fs, current: %.2f\n", time / 1000000.0, current);
+        if (relay_state == true)
+        {
+            motor_set_duty(tune_pwm + (int16_t)RELAY_STEP);
+            printf("tang\n");
+            return 0;
         }
-        // if (crossing_count >= 3)
-        // {
-        //     float Amplitude = (tune_max - tune_min) / 2.0f;
-        //     float Tu = (t2 - t1) / 1000000.0f;
-
-        //     float Ku = (4.0f * RELAY_STEP) / (3.14159f * Amplitude);
-
-        //     pid.Kp = 0.6f * Ku;
-        //     pid.Ki = (1.2f * Ku) / Tu;
-        //     pid.Kd = (0.075f * Ku) * Tu;
-
-        //     printf("\n--- AUTOTUNE SUCCESS ---\n");
-        //     printf("A: %.1f | Tu: %.3fs | Ku: %.3f\n", Amplitude, Tu, Ku);
-        //     printf("Kp: %.3f | Ki: %.3f | Kd: %.3f\n", pid.Kp, pid.Ki, pid.Kd);
-
-        //     tune_state = 1;
-        //     return tune_state;
-        // }
+        else
+        {
+            motor_set_duty(tune_pwm - (int16_t)RELAY_STEP);
+            printf("giam\n");
+            return 0;
+        }
     }
 
-    if (relay_state == true)
+    if (tune_state == 1)
     {
-        motor_set_duty(tune_pwm + (int16_t)RELAY_STEP);
-        return tune_state;
+        motor_set_duty(tune_pwm);
+
+        float peak_array[MAX_SAMPLES / 2];
+        float peak_index[MAX_SAMPLES / 2];
+        float bottom_array[MAX_SAMPLES / 2];
+        float bottom_index[MAX_SAMPLES / 2];
+
+        int p_index = 0;
+        int b_index = 0;
+
+        for (int i = 1; i < MAX_SAMPLES - 1; i++)
+        {
+            printf("%.2f, ", data[i]);
+            if (data[i] > (data[i - 1] + HYSTERESIS) && data[i] > (data[i + 1] + HYSTERESIS))
+            {
+                peak_array[p_index] = data[i];
+                peak_index[p_index] = i;
+                p_index++;
+            }
+            if (data[i] < (data[i - 1] - HYSTERESIS) && data[i] < (data[i + 1] - HYSTERESIS))
+            {
+                bottom_array[b_index] = data[i];
+                bottom_index[b_index] = i;
+                b_index++;
+            }
+        }
+
+        if (p_index >= 3 && b_index >= 3)
+        {
+            printf("\nnum index: %d \n", p_index);
+            for (int i = 1; i < p_index; i++)
+            {
+                printf("%.5f, ", peak_index[i]);
+                peak += peak_array[i];
+            }
+            peak /= (p_index - 1);
+            time_period = ((peak_index[p_index - 1] - peak_index[1]) / (p_index - 2)) * dt;
+            for (int i = 1; i < b_index; i++)
+            {
+                bottom += bottom_array[i];
+            }
+            bottom /= (b_index - 1);
+            tune_state = 2;
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Loi: Khong tim du dinh/day! P_idx: %d, B_idx: %d", p_index, b_index);
+            tune_state = -1;
+        }
     }
-    else
+    if (tune_state == 2)
     {
-        motor_set_duty(tune_pwm - (int16_t)RELAY_STEP);
-        return tune_state;
+        float A = (peak - bottom) / 2.0f;
+        float Ku = (4.0f * RELAY_STEP) / (3.14159f * A);
+        float Tu = time_period;
+        pid.Kp = 0.6 * Ku;
+        pid.Ki = 1.2 * Ku / Tu;
+        pid.Kd = 0.075 * Ku * Tu;
+        printf("Auto-tune complete! Kp: %.2f, Ki: %.2f, Kd: %.2f\n", pid.Kp, pid.Ki, pid.Kd);
+        tune_state = 3;
     }
+    if (tune_state == 3)
+    {
+        ESP_LOGI(TAG, "Auto-tune complete! Kp: %.2f, Ki: %.2f, Kd: %.2f", pid.Kp, pid.Ki, pid.Kd);
+        return 1;
+    }
+    return -1;
 }
 
-void Controller_GetParams(float *current_speed, float *target_speed, float *kP, float *kI, float *kD)
+void Controller_GetParams(float *current_speed, float *kP, float *kI, float *kD)
 {
     *current_speed = display_current_speed;
-    *target_speed = display_target_speed;
     *kP = pid.Kp;
     *kI = pid.Ki;
     *kD = pid.Kd;

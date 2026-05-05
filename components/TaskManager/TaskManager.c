@@ -69,25 +69,23 @@ void Controller_Task(void *pvParameters)
     static int64_t current_time = 0;
     Controller_Init();
     control_timer_init();
-    // while (1)
-    // {
-    //     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    //     current_time = esp_timer_get_time();
-    //     dt = (current_time - last_time) / 1000000.0;
-    //     last_time = current_time;
-    //     if (Controller_AutoTune(220, current_time, dt) == 1)
-    //     {
-    //         continue;
-    //     }
-    // }
     while (1)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        cnt = (cnt + 1) % 5000;
         current_time = esp_timer_get_time();
         dt = (current_time - last_time) / 1000000.0;
         last_time = current_time;
-        Controller_Update(target_speed, dt);
+        if (Controller_AutoTune(700, dt) == 1)
+            break;
+    }
+    while (1)
+    {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        cnt = (cnt + 1) % 500;
+        current_time = esp_timer_get_time();
+        dt = (current_time - last_time) / 1000000.0;
+        last_time = current_time;
+        Controller_Update(sp[cnt / 100], dt);
     }
 }
 
@@ -97,13 +95,13 @@ void TFT_task(void *pvParameters)
     TFT_gpio_init();
     TFT_Init();
     TFT_InvertColors(false);
-    float display_current_speed, display_target_speed, kP, kI, kD;
+    float display_current_speed, display_target_speed = 0, kP, kI, kD;
     TFT_FillScreen(TFT_WHITE);
     vTaskDelay(pdMS_TO_TICKS(2000));
     while (1)
     {
         // printf("Updating display...\n");
-        Controller_GetParams(&display_current_speed, &display_target_speed, &kP, &kI, &kD);
+        Controller_GetParams(&display_current_speed, &kP, &kI, &kD);
         // printf("Current Speed: %.2f, Target Speed: %.2f, kP: %.3f, kI: %.3f, kD: %.3f\n", display_current_speed, display_target_speed, kP, kI, kD);
         update_display(display_current_speed, display_target_speed, kP, kI, kD);
         vTaskDelay(pdMS_TO_TICKS(100));
