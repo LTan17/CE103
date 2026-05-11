@@ -9,16 +9,6 @@
 
 static const char *TAG = "Controller";
 
-typedef struct
-{
-    float Kp;
-    float Ki;
-    float Kd;
-    float prev_error;
-    float I;
-    float I_output_limit;
-} pid_t;
-
 pid_t pid = {.Kp = 0.0f, .Ki = 0.0f, .Kd = 0.0f, .prev_error = 0, .I = 0, .I_output_limit = 300.0};
 
 float display_current_speed, display_target_speed = 0.0;
@@ -44,9 +34,9 @@ static int32_t pid_calculate(pid_t *pid, float setpoint, float measured_value, f
     D_out_filter = alpha * derivative + (1 - alpha) * D_out_filter;
 
     float output = P_output + I_output + D_out_filter;
-    printf(">P: %.2f\n", P_output);
-    printf(">I: %.2f\n", I_output);
-    printf(">D: %.2f\n", D_out_filter);
+    // printf(">P: %.2f\n", P_output);
+    // printf(">I: %.2f\n", I_output);
+    // printf(">D: %.2f\n", D_out_filter);
     pid->prev_error = error;
     return (int32_t)output;
 }
@@ -86,7 +76,7 @@ static int16_t Controller_PID(float target_speed, float dt)
     display_target_speed = target_speed;
 
     int16_t control_signal = pid_calculate(&pid, (float)target_speed, current_speed, dt);
-    printf(">speed:%.2f\n", current_speed);
+    // printf(">speed:%.2f\n", current_speed);
 
     // printf("Target speed: %.2f, Current speed: %.2f, Control signal: %d ", target_speed, current_speed, control_signal);
     return control_signal;
@@ -100,7 +90,7 @@ void Controller_Update(float target_speed, float dt)
     duty = duty > MOTOR_MAX_DUTY ? MOTOR_MAX_DUTY : duty;
     duty = duty < 0 ? 0 : duty;
     duty = duty * abs(target_speed) / target_speed;
-    printf(">duty: %d\n", duty);
+    // printf(">duty: %d\n", duty);
     motor_set_duty(duty);
 }
 

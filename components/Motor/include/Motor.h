@@ -7,6 +7,10 @@
 #define LEDC_DUTY_RES LEDC_TIMER_10_BIT
 #define LEDC_FREQUENCY (4000)
 
+#define MOTOR_ENA_IO 4
+#define MOTOR_IN1_IO 2
+#define MOTOR_IN2_IO 15
+
 #define MOTOR_MAX_DUTY (1 << LEDC_DUTY_RES) - 1
 
 void motor_pwm_init(void);

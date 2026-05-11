@@ -6,9 +6,6 @@
 
 #define MAX_GLITCH_NS 1000
 
-#define GPIO_PHASE_A 14
-#define GPIO_PHASE_B 13
-
 static const char *TAG = "Encoder";
 
 pcnt_unit_handle_t pcnt_unit = NULL;

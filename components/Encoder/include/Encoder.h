@@ -8,5 +8,8 @@
 
 #define ENCODER_COUNT 30000
 
+#define GPIO_PHASE_A 14
+#define GPIO_PHASE_B 13
+
 esp_err_t Encoder_Init(void);
 void Encoder_Read(int *count);

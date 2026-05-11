@@ -4,10 +4,6 @@
 #include "driver/gpio.h"
 #include "esp_err.h"
 
-#define MOTOR_ENA_IO 5
-#define MOTOR_IN1_IO 16
-#define MOTOR_IN2_IO 17
-
 void motor_pwm_init(void)
 {
     ledc_timer_config_t ledc_timer = {
