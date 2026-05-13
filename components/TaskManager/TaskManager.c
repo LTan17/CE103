@@ -11,12 +11,17 @@
 #include "button.h"
 #include "driver/uart.h"
 #include "string.h"
+#include "esp_log.h"
+
 #define CONTROL_TIMER_ALARM_VALUE 50000
 
 #define UART_PORT       UART_NUM_0
 #define UART_BAUD_RATE  115200
 #define UART_RX_PIN     UART_PIN_NO_CHANGE
 #define UART_TX_PIN     UART_PIN_NO_CHANGE
+
+const char *TAG_UART = "UART";
+const char *TAG_BTN = "BUTTON";
 
 TaskHandle_t Controller_TaskHandle = NULL;
 TaskHandle_t TFT_TaskHandle = NULL;
@@ -31,15 +36,32 @@ float temp_ki = 17.8f;
 float temp_kd = 0.3f;
 float setpoint = 0.0f;
 
+static float confirmed_speed = 30.0f;
+static float confirmed_kp    =  5.0f;
+static float confirmed_ki    = 17.8f;
+static float confirmed_kd    =  0.3f;
+
 bool btn1_trigger = false;
 bool btn2_trigger = false;
 bool btn3_trigger = false;
+
 Button btn1, btn2, btn3;
+
 Control_mode mode = SPEED;
 
 bool uart_mode = false;
 bool autotune_mode = false;
 //float target_speed = 50.0;
+
+static const char *mode_str(Control_mode m) {
+    switch (m) {
+        case SPEED: return "SPEED";
+        case KP:    return "Kp";
+        case KI:    return "Ki";
+        case KD:    return "Kd";
+        default:    return "?";
+    }
+}
 
 void IRAM_ATTR isr_handler(void *arg)
 {
@@ -75,7 +97,7 @@ static void uart_process_command(const char *cmd)
         float cs, ts, kp, ki, kd;
         Controller_GetParams(&cs, &ts, &kp, &ki, &kd);
         snprintf(response, sizeof(response),
-                 "SPD:%.1f|SET:%.1f|KP:%.3f|KI:%.3f|KD:%.3f\n",
+                 "SPEED:%.1f| SET:%.1f| KP:%.3f| KI:%.3f| KD:%.3f\n",
                  cs, ts, kp, ki, kd);
         uart_write_bytes(UART_PORT, response, strlen(response));
         return;
@@ -96,21 +118,24 @@ static void uart_process_command(const char *cmd)
             if (value < 0 || value > 333.0f) { uart_write_bytes(UART_PORT, "ERR:RANGE\n", 10); return; }
             setpoint   = value;
             temp_speed = value;
-            snprintf(response, sizeof(response), "OK:SPD=%.1f\n", setpoint);
+            snprintf(response, sizeof(response), "SPEED=%.1f\n", setpoint);
+            ESP_LOGI(TAG_UART, "SET setpoint=%.1f", setpoint);
             break;
 
         case 'P':
             if (value < 0) { uart_write_bytes(UART_PORT, "ERR:RANGE\n", 10); return; }
             pid.Kp  = value;
             temp_kp = value;
-            snprintf(response, sizeof(response), "OK:KP=%.3f\n", pid.Kp);
+            snprintf(response, sizeof(response), "KP=%.3f\n", pid.Kp);
+            ESP_LOGI(TAG_UART, "SET Ki=%.3f", pid.Ki);
             break;
 
         case 'I':
             if (value < 0) { uart_write_bytes(UART_PORT, "ERR:RANGE\n", 10); return; }
             pid.Ki  = value;
             temp_ki = value;
-            snprintf(response, sizeof(response), "OK:KI=%.3f\n", pid.Ki);
+            snprintf(response, sizeof(response), "KI=%.3f\n", pid.Ki);
+            ESP_LOGI(TAG_UART, "SET Kd=%.3f", pid.Kd);
             break;
 
         case 'D':
@@ -165,7 +190,6 @@ void uart_task(void *pvParameters)
         }
         else
         {
-            // Buffer tràn, reset
             idx = 0;
             memset(rx_buf, 0, UART_BUF_SIZE);
             uart_write_bytes(UART_PORT, "ERR:OVERFLOW\n", 13);
@@ -285,6 +309,7 @@ void button_task(void *arg){
         BtnEvent e1 = process_button(&btn1, gpio_get_level(BTN1), now);
         BtnEvent e2 = process_button(&btn2, gpio_get_level(BTN2), now);
         BtnEvent e3 = process_button(&btn3, gpio_get_level(BTN3), now);
+        float before = (mode==SPEED)?temp_speed:(mode==KP)?temp_kp:(mode==KI)?temp_ki:temp_kd;
 
         if(e1 == BTN_SINGLE){
             if (mode == SPEED) temp_speed += STEP_SPEED;
@@ -292,6 +317,10 @@ void button_task(void *arg){
             else if (mode == KI) temp_ki += STEP_KI;
             else if (mode == KD) temp_kd += STEP_KD;
             limit_temp_values();
+            float after = (mode==SPEED)?temp_speed:(mode==KP)?temp_kp:(mode==KI)?temp_ki:temp_kd;
+            ESP_LOGI(TAG_BTN,
+                "[BTN1] %s tạm: %.4f → %.4f",
+                mode_str(mode), before, after);
         }
 
         if(e2 == BTN_SINGLE){
@@ -300,109 +329,78 @@ void button_task(void *arg){
             else if (mode == KI) temp_ki -= STEP_KI;
             else if (mode == KD) temp_kd -= STEP_KD;
             limit_temp_values();
+            float after = (mode==SPEED)?temp_speed:(mode==KP)?temp_kp:(mode==KI)?temp_ki:temp_kd;
+            ESP_LOGI(TAG_BTN,
+                "[BTN2] %s tạm: %.4f → %.4f",
+                mode_str(mode), before, after);
         }
         if(e3 == BTN_SINGLE){
+            Control_mode old = mode;
             mode = (mode + 1) % MODE_COUNT;
+            ESP_LOGI(TAG_BTN,
+                "[BTN3] Chuyển biến: %s → %s",
+                mode_str(old), mode_str(mode));
+
         }
         if(e1 == BTN_HOLD && !btn1_trigger){
             btn1_trigger = true;
             uart_mode = !uart_mode;
+            if (uart_mode)
+                ESP_LOGW(TAG_BTN,
+                    "[BTN1] UART MODE ON");
+            else
+                ESP_LOGW(TAG_BTN,
+                    "[BTN1] UART MODE OFF");
         }
         if(e1 == BTN_NONE) btn1_trigger = false;
 
         if(e2 == BTN_HOLD && !btn2_trigger){
             btn2_trigger = true;
             autotune_mode = !autotune_mode;
+            if (autotune_mode) {
+                ESP_LOGW(TAG_BTN,
+                    "[BTN2] AUTOTUNE ON");
+            } else {
+                ESP_LOGI(TAG_BTN,
+                    "[BTN2] AUTOTUNE OFF");
+                }
         }
         if(e2 == BTN_NONE) btn2_trigger = false;
 
-        if(e3 == BTN_HOLD && !btn3_trigger){
+        if (e3 == BTN_HOLD && !btn3_trigger) {
             btn3_trigger = true;
-            if (mode == SPEED) {
-                setpoint = temp_speed;
-            } 
-            else if (mode == KP) {
-                pid.Kp = temp_kp;
-            } 
-            else if (mode == KI) {
-                pid.Ki = temp_ki;
-            } 
-            else if (mode == KD) {
-                pid.Kd = temp_kd;
+            switch (mode) {
+                case SPEED:
+                    ESP_LOGW(TAG_BTN,
+                        "[BTN3] SET SPEED: %.1f → %.1f ",
+                        confirmed_speed, temp_speed);
+                    confirmed_speed = temp_speed;
+                    break;
+                case KP:
+                    ESP_LOGW(TAG_BTN,
+                        "[BTN3] SET Kp: %.3f → %.3f",
+                        confirmed_kp, temp_kp);
+                    confirmed_kp = temp_kp;
+                    break;
+                case KI:
+                    ESP_LOGW(TAG_BTN,
+                        "[BTN3] SET Ki: %.3f → %.3f",
+                        confirmed_ki, temp_ki);
+                    confirmed_ki = temp_ki;
+                    break;
+                case KD:
+                    ESP_LOGW(TAG_BTN,
+                        "[BTN3]  Kd: %.4f → %.4f",
+                        confirmed_kd, temp_kd);
+                    confirmed_kd = temp_kd;
+                    break;
+                default: break;
             }
         }
-        if (e3 == BTN_NONE){
-            btn3_trigger = false;       
-        }
+        if (e3 == BTN_NONE) btn3_trigger = false;
     }
 }
 
-/*
-void button_task(void *arg)
-{
-    Button btn1;
-    Button btn2;
-
-    float setpoint = 0;
-
-    uint32_t last_hold_1 = 0;
-    uint32_t last_hold_2 = 0;
-
-    button_init(&btn1, BTN1);
-    button_init(&btn2, BTN2);
-    while (1)
-    {
-        // chờ timer hoặc interrupt
-        xSemaphoreTake(btn_semaphore, pdMS_TO_TICKS(50));
-
-        // lấy thời gian hiện tại
-        uint32_t now = xTaskGetTickCount();
-
-        // FSM xử lý, update từng nút
-        BtnEvent e1 = process_button(&btn1, gpio_get_level(BTN1), now);
-        BtnEvent e2 = process_button(&btn2, gpio_get_level(BTN2), now);
-
-        if (e1 == BTN_SINGLE)
-        {
-            // printf("BTN1 SINGLE\n");
-            target_speed += 20;
-        }
-        if (e2 == BTN_SINGLE)
-        {
-            // printf("BTN2 SINGLE\n");
-            target_speed -= 20;
-        }
-        if (e1 == BTN_DOUBLE || e2 == BTN_DOUBLE)
-        {
-            // printf("BTN DOUBLE\n");
-            target_speed = 150;
-        }
-        if (btn1.state == HOLD)
-        {
-            // printf("BTN1 HOLD\n");
-            // target_speed += 20;
-            last_hold_1 = now;
-        }
-        if (btn2.state == HOLD)
-        {
-            // printf("BTN2 HOLD\n");
-            // target_speed -= 20;
-            last_hold_2 = now;
-        }
-
-        // if (setpoint > 100)
-        //     setpoint = 100;
-        // if (setpoint < 0)
-        //     setpoint = 0;
-        // static float last_sp = -1;
-        // if (last_sp != setpoint)
-        // {
-        //     printf("Setpoint = %.2f\n", setpoint);
-        //     last_sp = setpoint;
-        // }
-    }
-}
-*/
 void CreateTasks(void)
 {
     btn_semaphore = xSemaphoreCreateBinary();
