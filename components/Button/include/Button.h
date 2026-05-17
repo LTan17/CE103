@@ -1,9 +1,9 @@
 #pragma once
 #include <stdint.h>
 
-#define BTN1 26
-#define BTN2 27
-#define BTN3 28
+#define BTN1 25
+#define BTN2 26
+#define BTN3 27
 
 #define DEBOUNCE_MS 0
 #define HOLD_MS 1000
@@ -43,3 +43,4 @@ typedef struct
 } Button;
 BtnEvent process_button(Button *btn, int raw, uint32_t now);
 void button_init(Button *btn, int pin);
+void button_startup();

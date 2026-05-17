@@ -18,11 +18,4 @@ extern int idx;
 #define STEP_KI 0.1f
 #define STEP_KD 0.01f
 
-extern float temp_speed;
-extern float temp_kp;
-extern float temp_ki;
-extern float temp_kd;
-
-extern float setpoint;
-
 void CreateTasks(void);

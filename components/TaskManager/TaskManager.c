@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "TaskManager.h"
 #include "Controller.h"
 #include "esp_timer.h"
@@ -22,15 +23,14 @@ TaskHandle_t Controller_TaskHandle = NULL;
 TaskHandle_t TFT_TaskHandle = NULL;
 
 SemaphoreHandle_t btn_semaphore;
+SemaphoreHandle_t param_mutex;
 
 char rx_buf[UART_BUF_SIZE];
 int idx = 0;
 
-float temp_speed = 0.0f;
-float temp_kp = 5.0f;
-float temp_ki = 17.8f;
-float temp_kd = 0.3f;
-float setpoint = 0.0f;
+float temp_speed = 50.0f;
+pid_t temp_pid = {.Kp = 0.0f, .Ki = 0.0f, .Kd = 0.0f, .prev_error = 0, .I = 0, .I_output_limit = 0.0f};
+float setpoint = 100.0f;
 
 bool btn1_trigger = false;
 bool btn2_trigger = false;
@@ -73,11 +73,11 @@ static void uart_process_command(const char *cmd)
     if (strncmp(cmd, "GET", 3) == 0)
     {
         float cs, ts, kp, ki, kd;
-        Controller_GetParams(&cs, &kp, &ki, &kd);
-        snprintf(response, sizeof(response),
-                 "SPD:%.1f|KP:%.3f|KI:%.3f|KD:%.3f\n",
-                 cs, kp, ki, kd);
-        uart_write_bytes(UART_PORT, response, strlen(response));
+        Controller_GetSpeed(&cs);
+        // snprintf(response, sizeof(response),
+        //          "SPD:%.1f|KP:%.3f|KI:%.3f|KD:%.3f\n",
+        //          cs, kp, ki, kd);
+        // uart_write_bytes(UART_PORT, response, strlen(response));
         return;
     }
 
@@ -110,7 +110,7 @@ static void uart_process_command(const char *cmd)
             return;
         }
         pid.Kp = value;
-        temp_kp = value;
+        temp_pid.Kp = value;
         snprintf(response, sizeof(response), "OK:KP=%.3f\n", pid.Kp);
         break;
 
@@ -121,7 +121,7 @@ static void uart_process_command(const char *cmd)
             return;
         }
         pid.Ki = value;
-        temp_ki = value;
+        temp_pid.Ki = value;
         snprintf(response, sizeof(response), "OK:KI=%.3f\n", pid.Ki);
         break;
 
@@ -132,7 +132,7 @@ static void uart_process_command(const char *cmd)
             return;
         }
         pid.Kd = value;
-        temp_kd = value;
+        temp_pid.Kd = value;
         snprintf(response, sizeof(response), "OK:KD=%.3f\n", pid.Kd);
         break;
 
@@ -224,16 +224,15 @@ static void control_timer_init(void)
 
 void Controller_Task(void *pvParameters)
 {
-    uint16_t cnt = 0;
     float dt = 0;
     static int64_t last_time = 0;
     static int64_t current_time = 0;
     Controller_Init();
     control_timer_init();
+    Controller_GetPIDParams(&temp_pid);
     while (1)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        cnt = (cnt + 1) % 500;
         current_time = esp_timer_get_time();
         dt = (current_time - last_time) / 1000000.0;
         last_time = current_time;
@@ -242,10 +241,9 @@ void Controller_Task(void *pvParameters)
             if (Controller_AutoTune(700, dt) == 1)
             {
                 autotune_mode = false;
-                // float current_speed; có thể để debug
-                temp_kp = pid.Kp;
-                temp_ki = pid.Ki;
-                temp_kd = pid.Kd;
+                xSemaphoreTake(param_mutex, portMAX_DELAY);
+                Controller_GetPIDParams(&temp_pid);
+                xSemaphoreGive(param_mutex);
             }
         }
         else
@@ -257,23 +255,30 @@ void Controller_Task(void *pvParameters)
 
 void limit_temp_values(void)
 {
+    xSemaphoreTake(param_mutex, portMAX_DELAY);
     if (temp_speed > 200.0f)
         temp_speed = 200.0f;
     if (temp_speed < 50.0f)
         temp_speed = 50.0f;
-    if (temp_kp < 0.0f)
-        temp_kp = 0.0f;
-    if (temp_ki < 0.0f)
-        temp_ki = 0.0f;
-    if (temp_kd < 0.0f)
-        temp_kd = 0.0f;
+    if (temp_pid.Kp < 0.0f)
+        temp_pid.Kp = 0.0f;
+    if (temp_pid.Ki < 0.0f)
+        temp_pid.Ki = 0.0f;
+    if (temp_pid.Kd < 0.0f)
+        temp_pid.Kd = 0.0f;
+    xSemaphoreGive(param_mutex);
 }
 
 void button_task(void *arg)
 {
+    button_startup();
     button_init(&btn1, BTN1);
     button_init(&btn2, BTN2);
     button_init(&btn3, BTN3);
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(BTN1, isr_handler, NULL);
+    gpio_isr_handler_add(BTN2, isr_handler, NULL);
+    gpio_isr_handler_add(BTN3, isr_handler, NULL);
     while (1)
     {
         xSemaphoreTake(btn_semaphore, pdMS_TO_TICKS(50));
@@ -286,29 +291,62 @@ void button_task(void *arg)
 
         if (e1 == BTN_SINGLE)
         {
-            printf("BTN1: SINGLE\n");
+            // printf("BTN1: SINGLE\n");
             if (mode == SPEED)
+            {
+                xSemaphoreTake(param_mutex, portMAX_DELAY);
                 temp_speed += STEP_SPEED;
+                xSemaphoreGive(param_mutex);
+            }
+
             else if (mode == KP)
-                temp_kp += STEP_KP;
+            {
+                xSemaphoreTake(param_mutex, portMAX_DELAY);
+                temp_pid.Kp += STEP_KP;
+                xSemaphoreGive(param_mutex);
+            }
             else if (mode == KI)
-                temp_ki += STEP_KI;
+            {
+                xSemaphoreTake(param_mutex, portMAX_DELAY);
+                temp_pid.Ki += STEP_KI;
+                xSemaphoreGive(param_mutex);
+            }
             else if (mode == KD)
-                temp_kd += STEP_KD;
+            {
+                xSemaphoreTake(param_mutex, portMAX_DELAY);
+                temp_pid.Kd += STEP_KD;
+                xSemaphoreGive(param_mutex);
+            }
             limit_temp_values();
         }
 
         if (e2 == BTN_SINGLE)
         {
-            printf("BTN2: SINGLE\n");
+            // printf("BTN2: SINGLE\n");
             if (mode == SPEED)
+            {
+                xSemaphoreTake(param_mutex, portMAX_DELAY);
                 temp_speed -= STEP_SPEED;
+                xSemaphoreGive(param_mutex);
+            }
             else if (mode == KP)
-                temp_kp -= STEP_KP;
+            {
+                xSemaphoreTake(param_mutex, portMAX_DELAY);
+                temp_pid.Kp -= STEP_KP;
+                xSemaphoreGive(param_mutex);
+            }
             else if (mode == KI)
-                temp_ki -= STEP_KI;
+            {
+                xSemaphoreTake(param_mutex, portMAX_DELAY);
+                temp_pid.Ki -= STEP_KI;
+                xSemaphoreGive(param_mutex);
+            }
             else if (mode == KD)
-                temp_kd -= STEP_KD;
+            {
+                xSemaphoreTake(param_mutex, portMAX_DELAY);
+                temp_pid.Kd -= STEP_KD;
+                xSemaphoreGive(param_mutex);
+            }
             limit_temp_values();
         }
         if (e3 == BTN_SINGLE)
@@ -338,22 +376,8 @@ void button_task(void *arg)
         {
             printf("BTN3: HOLD\n");
             btn3_trigger = true;
-            if (mode == SPEED)
-            {
-                setpoint = temp_speed;
-            }
-            else if (mode == KP)
-            {
-                pid.Kp = temp_kp;
-            }
-            else if (mode == KI)
-            {
-                pid.Ki = temp_ki;
-            }
-            else if (mode == KD)
-            {
-                pid.Kd = temp_kd;
-            }
+            setpoint = temp_speed;
+            Controller_SetPIDParams(&temp_pid);
         }
         if (e3 == BTN_NONE)
         {
@@ -368,15 +392,24 @@ void TFT_task(void *pvParameters)
     TFT_gpio_init();
     TFT_Init();
     TFT_InvertColors(false);
-    float display_current_speed, display_target_speed = 0, kP, kI, kD;
+    gpio_reset_pin(GPIO_NUM_19);
+    gpio_set_direction(GPIO_NUM_19, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_19, 1);
+    float local_current_speed, local_setpoint, local_kP, local_kI, local_kD;
     TFT_FillScreen(TFT_WHITE);
     vTaskDelay(pdMS_TO_TICKS(2000));
     while (1)
     {
-        // printf("Updating display...\n");
-        Controller_GetParams(&display_current_speed, &kP, &kI, &kD);
-        // printf("Current Speed: %.2f, Target Speed: %.2f, kP: %.3f, kI: %.3f, kD: %.3f\n", display_current_speed, display_target_speed, kP, kI, kD);
-        update_display(display_current_speed, display_target_speed, kP, kI, kD);
+        Controller_GetSpeed(&local_current_speed);
+        xSemaphoreTake(param_mutex, portMAX_DELAY);
+        local_kP = temp_pid.Kp;
+        local_kI = temp_pid.Ki;
+        local_kD = temp_pid.Kd;
+        local_setpoint = temp_speed;
+        xSemaphoreGive(param_mutex);
+        // printf("Display mode: %d - Speed: %.1f, Setpoint: %.1f, Kp: %.3f, Ki: %.3f, Kd: %.3f\n",
+        //        mode, local_current_speed, local_setpoint, local_kP, local_kI, local_kD);
+        update_display(local_current_speed, local_setpoint, local_kP, local_kI, local_kD);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
@@ -384,20 +417,7 @@ void TFT_task(void *pvParameters)
 void CreateTasks(void)
 {
     btn_semaphore = xSemaphoreCreateBinary();
-    gpio_set_direction(25, GPIO_MODE_INPUT);
-    gpio_set_direction(26, GPIO_MODE_INPUT);
-    gpio_set_direction(27, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(25, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(26, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(27, GPIO_PULLUP_ONLY);
-
-    gpio_set_intr_type(25, GPIO_INTR_ANYEDGE);
-    gpio_set_intr_type(26, GPIO_INTR_ANYEDGE);
-    gpio_set_intr_type(27, GPIO_INTR_ANYEDGE);
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(25, isr_handler, NULL);
-    gpio_isr_handler_add(26, isr_handler, NULL);
-    gpio_isr_handler_add(27, isr_handler, NULL);
+    param_mutex = xSemaphoreCreateMutex();
     xTaskCreate(button_task, "button_task", 4096, NULL, 10, NULL);
 
     vTaskDelay(pdMS_TO_TICKS(2000)); // Delay to ensure all peripherals are initialized

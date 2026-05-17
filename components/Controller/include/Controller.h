@@ -15,5 +15,8 @@ extern pid_t pid;
 
 esp_err_t Controller_Init(void);
 void Controller_Update(float speed, float dt);
-void Controller_GetParams(float *current_speed, float *kP, float *kI, float *kD);
+void Controller_GetSpeed(float *current_speed);
 int16_t Controller_AutoTune(int tune_pwm, float dt);
+
+void Controller_SetPIDParams(pid_t *pid_params);
+void Controller_GetPIDParams(pid_t *pid_params);

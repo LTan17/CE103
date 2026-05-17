@@ -1,5 +1,6 @@
 #include "button.h"
 #include "freertos/FreeRTOS.h"
+#include "driver/gpio.h"
 
 void button_init(Button *btn, int pin)
 {
@@ -58,4 +59,19 @@ BtnEvent process_button(Button *btn, int raw, uint32_t now)
         }
     }
     return BTN_NONE;
+}
+
+void button_startup()
+{
+    gpio_set_direction(BTN1, GPIO_MODE_INPUT);
+    gpio_set_direction(BTN2, GPIO_MODE_INPUT);
+    gpio_set_direction(BTN3, GPIO_MODE_INPUT);
+
+    gpio_set_pull_mode(BTN1, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(BTN2, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(BTN3, GPIO_PULLUP_ONLY);
+
+    gpio_set_intr_type(BTN1, GPIO_INTR_ANYEDGE);
+    gpio_set_intr_type(BTN2, GPIO_INTR_ANYEDGE);
+    gpio_set_intr_type(BTN3, GPIO_INTR_ANYEDGE);
 }
